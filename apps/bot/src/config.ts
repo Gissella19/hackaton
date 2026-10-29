@@ -1,5 +1,14 @@
+import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
+
+// Cargar .env de la raíz o de apps/bot
 dotenv.config();
+
+const botEnv = path.resolve(process.cwd(), 'apps/bot/.env');
+if (fs.existsSync(botEnv)) {
+  dotenv.config({ path: botEnv });
+}
 
 export const config = {
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
@@ -14,7 +23,7 @@ export function validateConfig() {
   if (!config.telegramBotToken) missing.push('TELEGRAM_BOT_TOKEN');
   if (!config.geminiApiKey) missing.push('GEMINI_API_KEY');
   if (!config.supabaseUrl) missing.push('SUPABASE_URL');
-  if (!config.supabaseKey) missing.push('SUPABASE_KEY (o SUPABASE_SERVICE_ROLE_KEY)');
+  if (!config.supabaseKey) missing.push('SUPABASE_KEY');
 
   if (missing.length > 0) {
     console.warn(`[Config] AVISO: Faltan variables de entorno: ${missing.join(', ')}`);
