@@ -7,17 +7,17 @@ const SUSPICIOUS_PATTERNS: Array<{ regex: RegExp; type: AttackType; reason: stri
     reason: 'Intento de evasión de directrices del sistema (System override attempt)'
   },
   {
-    regex: /(sos|actua|comportate|eres|ahora\s+eres)\s+(el\s+)?(administrador|admin|director|rector|dueño|root)/i,
+    regex: /(sos|actua|actúa|comportate|eres|ahora\s+eres)\s+(como\s+)?(el\s+|un\s+)?(administrador|admin|director|rector|dueño|root|decano)/i,
     type: 'ROLE_HIJACK',
     reason: 'Intento de suplantación de rol jerárquico o administrativo'
   },
   {
-    regex: /(descuento|beca)\s*(100%|total|gratis|gratuito|sin\s+costo|regalado|0\s*dolares)/i,
+    regex: /(descuento|beca|cupón|cupon)\s*(100%|total|gratis|gratuito|sin\s+costo|regalado|0\s*dolares|completa)/i,
     type: 'DISCOUNT_MANIPULATION',
     reason: 'Intento forzado de manipulación indebida de precios o gratuidad'
   },
   {
-    regex: /(system\s*prompt|system_instruction|hidden\s*rules|dame\s+tu\s+prompt)/i,
+    regex: /(system\s*prompt|system_instruction|hidden\s*rules|dame\s+tu\s+prompt|revela\s+tus\s+instrucciones)/i,
     type: 'JAILBREAK',
     reason: 'Intento de exfiltración del prompt del sistema'
   }
