@@ -45,7 +45,7 @@ export async function handleConsolidatedMessage(params: {
     content: text
   });
 
-  // 3. ESCUDO ANTI-INYECCIÓN (Fase Heurística)
+  // 3. ESCUDO ANTI-INYECCIÓN (Fase Heurística 0 ms)
   const heuristic = inspectInputHeuristics(text);
   if (heuristic.isBlocked) {
     console.warn(`[Seguridad] Bloqueo en chat #${chatId}: ${heuristic.reason}`);
@@ -54,7 +54,7 @@ export async function handleConsolidatedMessage(params: {
       chatId,
       attackType: heuristic.attackType,
       rawInput: text,
-      severity: 'HIGH'
+      severity: heuristic.severity || 'HIGH'
     });
 
     await updateChatMetadata({
@@ -64,10 +64,17 @@ export async function handleConsolidatedMessage(params: {
       sentiment: 'dudoso'
     });
 
-    await bot.api.sendMessage(
+    const replyText =
+      heuristic.diplomaticReply ||
+      '⚠️ Aviso institucional: Los precios y normativas de los programas CTT-FISEI son de carácter oficial e inalterables. Si requieres atención personalizada, con gusto te comunico con coordinación académica.';
+
+    await bot.api.sendMessage(chatId, replyText);
+
+    await saveMessage({
       chatId,
-      '⚠️ Aviso del sistema: Los precios y normativas de los cursos FISEI son de carácter oficial e inalterables. Si necesitas una consulta personalizada, con gusto te comunico con coordinación académica.'
-    );
+      sender: 'ai',
+      content: replyText
+    });
     return;
   }
 
