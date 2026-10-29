@@ -5,14 +5,18 @@
  * Ejecutar la secuencia lógica cuando un mensaje (o ráfaga debounced) está listo:
  * 1. Check del semáforo a 0 ms (`stateCache.isAiPaused`).
  * 2. Persistencia del mensaje entrante en Supabase.
- * 3. Ejecución de guardrails heurísticos y LLM (Gemini 3.8 Flash).
- * 4. Despacho de la respuesta y actualización de metadatos.
+ * 3. Ejecución de guardrails heurísticos anti-inyección.
+ * 4. Carga de memoria conversacional y entidades del prospecto (`memoryService`).
+ * 5. Inferencia contextualizada con Gemini y búsqueda vectorial RAG.
+ * 6. Despacho de la respuesta oficial a Telegram.
+ * 7. Persistencia de la respuesta y actualización de memoria acumulativa.
  */
 
 import { Bot } from 'grammy';
 import { stateCache } from '../core/stateCache.js';
 import { inspectInputHeuristics } from '../services/guardrail.service.js';
 import { processProspectMessage } from '../services/gemini.service.js';
+import { memoryService } from '../services/memory.service.js';
 import {
   saveMessage,
   updateChatMetadata,
@@ -25,7 +29,7 @@ export async function handleConsolidatedMessage(params: {
   text: string;
   isVoice?: boolean;
 }): Promise<void> {
-  const { bot, chatId, text, isVoice } = params;
+  const { bot, chatId, text } = params;
 
   // 1. SEMÁFORO EN RAM (0 ms reales): ¿La IA está pausada por el operador?
   if (stateCache.isAiPaused(chatId)) {
@@ -81,12 +85,16 @@ export async function handleConsolidatedMessage(params: {
   // 4. Indicador de "Escribiendo..." en Telegram
   await bot.api.sendChatAction(chatId, 'typing');
 
-  // 5. Inferencia con Gemini 3.8 Flash
+  // 5. Cargar memoria conversacional completa (corto y largo plazo)
+  const context = await memoryService.loadConversationContext(chatId);
+
+  // 6. Inferencia contextual con Gemini + RAG augmentado
   const decision = await processProspectMessage({
-    userInput: text
+    userInput: text,
+    context
   });
 
-  // 6. Registro si el LLM detectó un intento de ataque sofisticado
+  // 7. Registro si el LLM detectó un intento de ataque sofisticado
   if (decision.security_audit.is_attack) {
     await logSecurityIncident({
       chatId,
@@ -96,29 +104,26 @@ export async function handleConsolidatedMessage(params: {
     });
   }
 
-  // 7. Enviar la respuesta oficial por Telegram
+  // 8. Enviar la respuesta oficial por Telegram
   await bot.api.sendMessage(chatId, decision.reply_to_user);
 
-  // 8. Persistir respuesta de la IA
+  // 9. Persistir respuesta de la IA en la base de datos
   await saveMessage({
     chatId,
     sender: 'ai',
     content: decision.reply_to_user
   });
 
-  // 9. Si el modelo detecta que debe pausarse (handover automático)
+  // 10. Si el modelo detecta que debe pausarse (handover automático)
   if (decision.should_trigger_handover) {
     stateCache.setAiPaused(chatId, true);
   }
 
-  // 10. Actualizar metadatos, termómetro y resumen para el operador
-  await updateChatMetadata({
+  // 11. Persistir memoria consolidada del turno en Supabase (curso activo, nombre, resumen)
+  await memoryService.persistTurnMemory({
     chatId,
-    aiPaused: decision.should_trigger_handover,
-    sentiment: decision.lead_status.toLowerCase(),
-    summary: `${decision.prospect_profile.interest || 'Consulta general'} | Objeción: ${decision.prospect_profile.main_objection || 'Ninguna'}`,
-    suggestedReply: decision.prospect_profile.suggested_human_action || 'Cerrar matriculación con plan de pago oficial.',
-    securityFlag: decision.security_audit.is_attack,
-    securityReason: decision.security_audit.attack_reason || undefined
+    decision,
+    context,
+    userInput: text
   });
 }

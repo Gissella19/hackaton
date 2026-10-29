@@ -7,6 +7,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { SecuritySeverity } from '@hackaton/shared';
 import { config } from '../config.js';
 
 let supabaseClient: SupabaseClient | null = null;
@@ -77,6 +78,50 @@ export async function getOrCreateChat(params: {
 }
 
 /**
+ * Obtiene el registro de un chat por su ID.
+ */
+export async function getChatById(chatId: number): Promise<ChatRecord | null> {
+  const client = getSupabase();
+  if (!client) return null;
+
+  const { data, error } = await client
+    .from('chats')
+    .select('*')
+    .eq('id', chatId)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+  return data as ChatRecord;
+}
+
+/**
+ * Obtiene los mensajes más recientes de una conversación ordenados cronológicamente.
+ */
+export async function getRecentMessages(
+  chatId: number,
+  limit: number = 8
+): Promise<Array<{ sender: 'user' | 'ai' | 'operator'; content: string; created_at: string }>> {
+  const client = getSupabase();
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from('messages')
+    .select('sender, content, created_at')
+    .eq('chat_id', chatId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error || !data) {
+    return [];
+  }
+
+  // Invertir para que queden en orden cronológico (antiguo -> reciente)
+  return (data as Array<{ sender: 'user' | 'ai' | 'operator'; content: string; created_at: string }>).reverse();
+}
+
+/**
  * Persiste un mensaje en la tabla `messages`.
  */
 export async function saveMessage(params: {
@@ -105,6 +150,7 @@ export async function saveMessage(params: {
  */
 export async function updateChatMetadata(params: {
   chatId: number;
+  fullName?: string;
   aiPaused?: boolean;
   sentiment?: string;
   summary?: string;
@@ -120,6 +166,7 @@ export async function updateChatMetadata(params: {
     updated_at: new Date().toISOString()
   };
 
+  if (params.fullName !== undefined) payload.full_name = params.fullName;
   if (params.aiPaused !== undefined) payload.ai_paused = params.aiPaused;
   if (params.sentiment !== undefined) payload.sentiment = params.sentiment;
   if (params.summary !== undefined) payload.summary = params.summary;
@@ -145,7 +192,7 @@ export async function logSecurityIncident(params: {
   chatId: number;
   attackType: string;
   rawInput: string;
-  severity?: 'LOW' | 'MEDIUM' | 'HIGH';
+  severity?: SecuritySeverity;
 }) {
   const client = getSupabase();
   if (!client) return;

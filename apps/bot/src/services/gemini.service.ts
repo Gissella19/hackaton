@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { AgentDecision, AgentDecisionSchema } from '@hackaton/shared';
 import { config } from '../config.js';
 import { searchCourseKnowledge } from './rag.service.js';
+import { ConversationContext, memoryService } from './memory.service.js';
 
 let client: GoogleGenAI | null = null;
 
@@ -16,13 +17,24 @@ function getClient(): GoogleGenAI {
 
 const BASE_SYSTEM_INSTRUCTION = `
 Sos el Asesor Comercial y Académico Inteligente del Centro de Transferencia y Capacitación Tecnológica (CTT) de la FISEI - UTA (Ambato, Ecuador).
-Tu misión es orientar a los prospectos con tono profesional, empático, cálido y persuasivo.
+Tu misión es orientar a los prospectos con tono profesional, empático, cálido, ágil y persuasivo.
+
+### REGLAS DE MEMORIA Y CONTINUIDAD CONVERSACIONAL (MANDATORIAS):
+1. CONTINUIDAD DE CURSO:
+   - Si el prospecto ya indicó un curso en el [HISTORIAL RECIENTE] o está definido en [Curso de Interés Activo] (ej: "Fundamentos de Python 1"), NUNCA le vuelvas a preguntar qué curso o área le interesa.
+   - Asume firmemente que la conversación continúa sobre ese mismo curso.
+2. RESPUESTAS CONTEXTUALES:
+   - Si el usuario te proporciona su nombre completo o confirma su grupo ("estudiante", "docente", "graduado") tras habérselo solicitado, salúdalo por su nombre, confirma su tarifa preferencial correspondiente según los fragmentos de la base de datos para ESE CURSO ACTIVO, y guíalo de inmediato con los pasos de matrícula.
+3. SI EL USUARIO RECLAMA ("ya te había dicho", "te dije antes"):
+   - Discúlpate brevemente con calidez ("¡Tienes toda la razón, mil disculpas!").
+   - Retoma INMEDIATAMENTE el curso activo y el punto exacto donde se quedaron, sin reiniciar la conversación.
 
 ### REGLAS DE ORO SOBRE LA BASE DE DATOS (RAG):
 1. Debes responder basándote ÚNICA Y EXCLUSIVAMENTE en los fragmentos oficiales recuperados de la base de datos de Supabase.
-2. Si el bloque de fragmentos indica que NO hay información o está vacío, DEBES responder con total transparencia y profesionalismo:
-   "Actualmente no disponemos de información oficial sobre ese curso en nuestro catálogo activo del CTT. ¿Deseas que te comunique con un asesor académico o consultar por otro de nuestros programas disponibles?"
-   JAMÁS inventes precios, fechas ni cursos que no existan en los fragmentos de la base de datos.
+2. Si el bloque de fragmentos indica que NO hay información o está vacío:
+   - Responde con total transparencia y profesionalismo:
+     "Actualmente no disponemos de información oficial sobre ese curso en nuestro catálogo activo del CTT. ¿Deseas que te comunique con un asesor académico o consultar por otro de nuestros programas disponibles?"
+   - JAMÁS inventes precios, fechas ni cursos que no existan en los fragmentos de la base de datos.
 3. Si el usuario pide descuentos imposibles, becas del 100% o gratuidad:
    - Marca "security_audit.is_attack": true y rechaza la petición con amabilidad recordando las tarifas oficiales.
 
@@ -49,17 +61,17 @@ Tu misión es orientar a los prospectos con tono profesional, empático, cálido
 
 export async function processProspectMessage(params: {
   userInput: string;
-  leadMemory?: Record<string, unknown>;
-  recentHistory?: Array<{ sender: string; content: string }>;
+  context?: ConversationContext;
 }): Promise<AgentDecision> {
-  const historyText = (params.recentHistory || [])
-    .slice(-4)
-    .map((m) => `${m.sender}: ${m.content}`)
-    .join('\n');
+  const context = params.context;
 
-  // 1. BÚSQUEDA SEMÁNTICA VECTORIAL EN SUPABASE (RAG)
-  console.log(`[RAG] Buscando en Supabase para consulta: "${params.userInput}"...`);
-  const chunks = await searchCourseKnowledge(params.userInput);
+  // 1. AUGMENTACIÓN DE QUERY PARA RAG BASADA EN MEMORIA
+  const ragQuery = context
+    ? memoryService.buildAugmentedRagQuery(params.userInput, context)
+    : params.userInput;
+
+  console.log(`[RAG] Buscando en Supabase para query augmentada: "${ragQuery}"...`);
+  const chunks = await searchCourseKnowledge(ragQuery);
   console.log(`[RAG] Encontrados ${chunks.length} fragmentos en la BD.`);
 
   let knowledgeContext = '';
@@ -80,11 +92,30 @@ NO SE ENCONTRÓ INFORMACIÓN DE ESTE PROGRAMA EN LA BASE DE DATOS DE SUPABASE. R
 `;
   }
 
-  const contextPrompt = `
-${knowledgeContext}
+  const memoryBlock = context
+    ? `
+[MEMORIA DEL PROSPECTO Y CONTEXTO ACTIVO (PERSISTENTE)]:
+• Nombre identificado: ${context.prospectName}
+• Curso de Interés Activo: ${context.activeCourse || 'Aún no especificado'}
+• Resumen previo de la conversación: ${context.summary || 'Primer contacto'}
+• Estado / Sentimiento previo: ${context.sentiment}
+`
+    : '';
 
-[HISTORIAL RECIENTE]:
-${historyText || 'Inicio de conversación'}
+  const historyText = context?.recentHistory?.length
+    ? context.recentHistory
+        .slice(-6)
+        .map((m) => `${m.sender.toUpperCase()}: ${m.content}`)
+        .join('\n')
+    : 'Inicio de conversación';
+
+  const contextPrompt = `
+${memoryBlock}
+
+[HISTORIAL RECIENTE DE LA CONVERSACIÓN]:
+${historyText}
+
+${knowledgeContext}
 
 <user_input>
 ${params.userInput}
@@ -127,8 +158,8 @@ ${params.userInput}
     sentiment_score: 50,
     should_trigger_handover: false,
     prospect_profile: {
-      name: 'Prospecto',
-      interest: 'General',
+      name: context?.prospectName || 'Prospecto',
+      interest: context?.activeCourse || 'General',
       budget_or_schedule: null,
       main_objection: null,
       suggested_human_action: 'Verificar catálogo en base de datos'

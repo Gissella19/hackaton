@@ -5,7 +5,7 @@ export type AttackType =
   | 'JAILBREAK'
   | 'OFF_TOPIC';
 
-export type SecuritySeverity = 'LOW' | 'MEDIUM' | 'HIGH';
+export type SecuritySeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
 export interface SecurityIncident {
   id: string;
