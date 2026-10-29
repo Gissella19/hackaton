@@ -10,6 +10,7 @@ import { Bot } from 'grammy';
 import { config } from './config.js';
 import { debounceQueue } from './core/debounceQueue.js';
 import { voiceService } from './services/voice.service.js';
+import { enrollmentService } from './services/enrollment.service.js';
 import { getOrCreateChat, saveMessage } from './services/supabase.service.js';
 import { handleConsolidatedMessage } from './handlers/message.handler.js';
 
@@ -36,6 +37,19 @@ export function createTelegramBot(): Bot {
       chatId,
       sender: 'ai',
       content: welcome
+    });
+  });
+
+  // Comandos /pdf, /inscripcion, /matricula, /ordendepago
+  bot.command(['pdf', 'inscripcion', 'matricula', 'ordendepago'], async (ctx) => {
+    const chatId = ctx.chat.id;
+    const fullName = [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || 'Prospecto';
+
+    await ctx.replyWithChatAction('upload_document');
+    await enrollmentService.sendEnrollmentPdfToChat({
+      bot,
+      chatId,
+      userFullNameFallback: fullName
     });
   });
 

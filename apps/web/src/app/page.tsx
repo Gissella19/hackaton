@@ -18,7 +18,8 @@ import {
   RotateCcw,
   ShieldAlert,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  FileText
 } from 'lucide-react';
 
 const SSR_REFERENCE_MS = Date.parse('2026-10-29T17:45:00.000Z');
@@ -72,6 +73,8 @@ export default function MissionControlDashboard() {
   } = useMissionControl();
 
   const [operatorInput, setOperatorInput] = useState('');
+  const [isSendingPdf, setIsSendingPdf] = useState(false);
+  const [pdfSuccessMessage, setPdfSuccessMessage] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number>(SSR_REFERENCE_MS);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -137,6 +140,30 @@ export default function MissionControlDashboard() {
   const handleSendSuggestedNow = async () => {
     if (!selectedChat?.suggested_reply || isSending) return;
     await sendOperatorMessage(selectedChat.suggested_reply);
+  };
+
+  const handleEmitPdf = async () => {
+    if (!selectedChat || isSendingPdf) return;
+    setIsSendingPdf(true);
+    setPdfSuccessMessage(null);
+    try {
+      const res = await fetch('/api/handover/send-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: selectedChat.id })
+      });
+      if (res.ok) {
+        setPdfSuccessMessage('¡Orden de pago enviada con éxito!');
+        setTimeout(() => setPdfSuccessMessage(null), 4000);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Error al emitir PDF: ${err.error || 'No se pudo generar el documento'}`);
+      }
+    } catch (e: any) {
+      alert(`Error de conexión: ${e.message}`);
+    } finally {
+      setIsSendingPdf(false);
+    }
   };
 
   const courseRef = resolveCourseReference(
@@ -595,6 +622,36 @@ export default function MissionControlDashboard() {
                     <span>Enviar ahora</span>
                   </button>
                 </div>
+              </section>
+
+              {/* Formalización y Orden de Pago Oficial (PDF) */}
+              <section className="rounded-xl border border-[#1E2638] bg-[#0B0F17] p-4 space-y-3">
+                <div className="flex items-center gap-2 text-amber-300">
+                  <FileText className="h-3.5 w-3.5" />
+                  <h3 className="text-xs font-medium text-slate-200">
+                    Orden de Pago & Ficha (PDF)
+                  </h3>
+                </div>
+
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Genera la orden oficial en formato A4 con arancel de {courseRef.officialPriceText}, datos del prospecto, código de trámite y cuenta institucional.
+                </p>
+
+                {pdfSuccessMessage ? (
+                  <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-2 text-center text-xs text-emerald-300">
+                    {pdfSuccessMessage}
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={handleEmitPdf}
+                  disabled={isSendingPdf}
+                  className="w-full rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 disabled:opacity-40 px-3 py-2 text-xs font-medium text-amber-300 flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <FileText className={`h-3 w-3 ${isSendingPdf ? 'animate-bounce' : ''}`} />
+                  <span>{isSendingPdf ? 'Generando PDF...' : 'Emitir Orden de Pago a Telegram'}</span>
+                </button>
               </section>
 
               {/* Estado de seguridad */}

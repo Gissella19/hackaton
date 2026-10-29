@@ -10,6 +10,7 @@
 import http from 'http';
 import { Bot } from 'grammy';
 import { saveMessage } from '../services/supabase.service.js';
+import { enrollmentService } from '../services/enrollment.service.js';
 
 export function startOperatorServer(bot: Bot, port = 3001) {
   const server = http.createServer(async (req, res) => {
@@ -21,6 +22,40 @@ export function startOperatorServer(bot: Bot, port = 3001) {
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/operator/send-pdf') {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+      });
+
+      req.on('end', async () => {
+        try {
+          const payload = JSON.parse(body);
+          const { chatId } = payload;
+
+          if (!chatId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Falta parámetro: chatId es obligatorio' }));
+            return;
+          }
+
+          console.log(`[OperatorServer] Generando y enviando PDF oficial a chat #${chatId}...`);
+          const success = await enrollmentService.sendEnrollmentPdfToChat({
+            bot,
+            chatId: Number(chatId)
+          });
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success, chatId, dispatchedAt: new Date().toISOString() }));
+        } catch (err: any) {
+          console.error('[OperatorServer] Error despachando PDF:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message || 'Error generando PDF' }));
+        }
+      });
       return;
     }
 

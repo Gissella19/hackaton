@@ -17,6 +17,7 @@ import { stateCache } from '../core/stateCache.js';
 import { inspectInputHeuristics } from '../services/guardrail.service.js';
 import { processProspectMessage } from '../services/gemini.service.js';
 import { memoryService } from '../services/memory.service.js';
+import { enrollmentService } from '../services/enrollment.service.js';
 import {
   saveMessage,
   updateChatMetadata,
@@ -120,12 +121,30 @@ export async function handleConsolidatedMessage(params: {
     content: decision.reply_to_user
   });
 
-  // 10. Si el modelo detecta que debe pausarse (handover automático)
+  // 10. Despacho proactivo de PDF si el prospecto solicita su orden de pago o ficha
+  const wantsPdf =
+    /(pdf|orden\s+de\s+pago|ficha\s+de\s+inscripci|ficha\s+t[eé]cnica|comprobante|formulario\s+de\s+inscripci)/i.test(
+      cleanInput
+    ) ||
+    /(dame|envia|enviar|envíame|manda|mandar|mándame|puedes\s+darme|quiero|descargar|generar|pásame|pasame|adjunta|facilita)[\s\w]*(pdf|orden|ficha|comprobante)/i.test(
+      cleanInput
+    );
+
+  if (wantsPdf) {
+    console.log(`[MessageHandler] Prospecto #${chatId} solicitó PDF oficial. Generando y despachando...`);
+    await enrollmentService.sendEnrollmentPdfToChat({
+      bot,
+      chatId,
+      userFullNameFallback: context.prospectName
+    });
+  }
+
+  // 11. Si el modelo detecta que debe pausarse (handover automático)
   if (decision.should_trigger_handover) {
     stateCache.setAiPaused(chatId, true);
   }
 
-  // 11. Persistir memoria consolidada del turno en Supabase (curso activo, nombre, resumen)
+  // 12. Persistir memoria consolidada del turno en Supabase (curso activo, nombre, resumen)
   await memoryService.persistTurnMemory({
     chatId,
     decision,
