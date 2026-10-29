@@ -5,6 +5,7 @@
 
 -- 1. Habilitar la extensión vectorial para RAG
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 2. Tabla de Prospectos / Sesiones de Chat (Telegram)
 CREATE TABLE IF NOT EXISTS chats (
@@ -44,11 +45,26 @@ CREATE TABLE IF NOT EXISTS course_knowledge (
   embedding VECTOR(768)                -- Embedding de Google text-embedding-004
 );
 
--- 5. Índice HNSW ultrarrápido para búsqueda vectorial (< 5ms)
+-- 5. Tabla de Auditoría / Radar de Seguridad para el Jurado
+CREATE TABLE IF NOT EXISTS security_logs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  chat_id BIGINT REFERENCES chats(id) ON DELETE SET NULL,
+  attack_type TEXT NOT NULL,
+  raw_input TEXT NOT NULL,
+  severity TEXT NOT NULL DEFAULT 'HIGH',
+  detected_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 6. Índices de Alto Rendimiento
 CREATE INDEX IF NOT EXISTS course_knowledge_embedding_hnsw_idx 
 ON course_knowledge USING hnsw (embedding vector_cosine_ops);
 
--- 6. Función RPC para Búsqueda Vectorial Semántica
+CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id);
+CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_chats_ai_paused ON chats(ai_paused);
+CREATE INDEX IF NOT EXISTS idx_chats_sentiment ON chats(sentiment);
+
+-- 7. Función RPC para Búsqueda Vectorial Semántica
 CREATE OR REPLACE FUNCTION match_course_chunks(
   query_embedding VECTOR(768),
   match_threshold FLOAT DEFAULT 0.60,
@@ -82,6 +98,18 @@ BEGIN
 END;
 $$;
 
--- 7. Habilitar Supabase Realtime en las tablas chats y messages
+-- 8. Habilitar Supabase Realtime en las tablas
 ALTER PUBLICATION supabase_realtime ADD TABLE chats;
 ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+ALTER PUBLICATION supabase_realtime ADD TABLE security_logs;
+
+-- 9. Row Level Security permisivo para Hackathon
+ALTER TABLE chats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_knowledge ENABLE ROW LEVEL SECURITY;
+ALTER TABLE security_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read-write for hackathon chats" ON chats FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public read-write for hackathon messages" ON messages FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public read-write for hackathon knowledge" ON course_knowledge FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public read-write for hackathon security" ON security_logs FOR ALL USING (true) WITH CHECK (true);

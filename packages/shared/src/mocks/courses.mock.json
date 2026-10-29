@@ -1,0 +1,56 @@
+[
+  {
+    "id": "curso-fullstack-ts",
+    "name": "Fullstack Moderno con Next.js & TypeScript",
+    "category": "Desarrollo Web",
+    "modality": "Online en vivo",
+    "duration_hours": 60,
+    "schedule": "Martes y Jueves de 19:00 a 22:00 (Hora Ecuador)",
+    "official_price_usd": 250,
+    "max_allowed_discount_usd": 220,
+    "discount_policy": "Descuento de $30 solo aplicable por pago de contado antes del inicio de clases. Prohibido otorgar descuentos mayores o becas del 100% sin autorización de Rectorado.",
+    "prerequisites": "Fundamentos básicos de programación en JavaScript o Python.",
+    "pensum_summary": [
+      "Módulo 1: TypeScript Avanzado y Buenas Prácticas",
+      "Módulo 2: Next.js App Router, Server Components y Acciones",
+      "Módulo 3: Supabase (PostgreSQL, Autenticación y Realtime)",
+      "Módulo 4: Despliegue en Producción y CI/CD con Vercel"
+    ]
+  },
+  {
+    "id": "curso-ia-python",
+    "name": "Inteligencia Artificial Aplicada & Modelos Fundacionales con Python",
+    "category": "Inteligencia Artificial",
+    "modality": "Híbrido (Clases virtuales + Laboratorio en Ambato)",
+    "duration_hours": 80,
+    "schedule": "Sábados de 08:00 a 14:00 (Hora Ecuador)",
+    "official_price_usd": 320,
+    "max_allowed_discount_usd": 290,
+    "discount_policy": "Descuento especial de $30 para estudiantes activos FISEI-UTA presentando matrícula.",
+    "prerequisites": "Conocimientos intermedios de Python y matemáticas básicas.",
+    "pensum_summary": [
+      "Módulo 1: Machine Learning Práctico y Preprocesamiento de Datos",
+      "Módulo 2: LLMs y APIs (Gemini 3.8 Flash, embeddings y RAG)",
+      "Módulo 3: Sistemas Multi-Agente y Function Calling",
+      "Módulo 4: Proyecto Integrador de Automatización Empresarial"
+    ]
+  },
+  {
+    "id": "curso-devops-cloud",
+    "name": "DevOps, Docker & Cloud Architecture en AWS/GCP",
+    "category": "Infraestructura & Cloud",
+    "modality": "100% Online",
+    "duration_hours": 50,
+    "schedule": "Lunes y Miércoles de 19:00 a 21:30",
+    "official_price_usd": 200,
+    "max_allowed_discount_usd": 180,
+    "discount_policy": "Precio fijo no negociable.",
+    "prerequisites": "Manejo de terminal Linux y nociones de redes.",
+    "pensum_summary": [
+      "Módulo 1: Contenedores con Docker y Docker Compose",
+      "Módulo 2: Orquestación básica con Kubernetes",
+      "Módulo 3: Pipelines de CI/CD con GitHub Actions",
+      "Módulo 4: Infraestructura como Código y Monitorización"
+    ]
+  }
+]
