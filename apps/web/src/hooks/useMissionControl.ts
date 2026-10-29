@@ -3,35 +3,44 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 import { SecurityIncident } from '@hackaton/shared';
+import { mapSentimentToLeadStatus } from '@/components/LeadThermometer';
 import {
   ChatRecord,
   MessageRecord,
+  CourseReference,
   DEMO_CHATS,
   DEMO_MESSAGES,
-  DEMO_SECURITY_INCIDENTS
+  DEMO_SECURITY_INCIDENTS,
+  COURSE_CATALOG
 } from '@/data/demoData';
 
 export type ChatFilterTab = 'all' | 'hot' | 'human' | 'alerts';
 
 export function useMissionControl() {
-  const [chats, setChats] = useState<ChatRecord[]>(DEMO_CHATS);
-  const [selectedChatId, setSelectedChatId] = useState<number | null>(
-    DEMO_CHATS[0]?.id ?? null
-  );
-  const [messagesByChat, setMessagesByChat] =
-    useState<Record<number, MessageRecord[]>>(DEMO_MESSAGES);
+  const [chats, setChats] = useState<ChatRecord[]>([]);
+  const [selectedChatId, setSelectedChatId] = useState<number | null>(null);
+  const [messagesByChat, setMessagesByChat] = useState<
+    Record<number, MessageRecord[]>
+  >({});
   const [securityIncidents, setSecurityIncidents] = useState<SecurityIncident[]>(
-    DEMO_SECURITY_INCIDENTS
+    []
   );
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(!isSupabaseConfigured);
+  const [liveCatalog, setLiveCatalog] = useState<CourseReference[]>(COURSE_CATALOG);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSending, setIsSending] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeFilter, setActiveFilter] = useState<ChatFilterTab>('all');
 
-  // Initial load & Realtime subscriptions when Supabase is configured
+  // Load live data from Supabase and subscribe to Realtime feeds
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
       setIsDemoMode(true);
+      setChats(DEMO_CHATS);
+      setSelectedChatId(DEMO_CHATS[0]?.id ?? null);
+      setMessagesByChat(DEMO_MESSAGES);
+      setSecurityIncidents(DEMO_SECURITY_INCIDENTS);
+      setIsLoading(false);
       return;
     }
 
@@ -39,8 +48,9 @@ export function useMissionControl() {
     let isMounted = true;
 
     async function loadFromSupabase() {
+      setIsLoading(true);
       try {
-        const [chatsRes, secRes] = await Promise.all([
+        const [chatsRes, secRes, coursesRes] = await Promise.all([
           client
             .from('chats')
             .select('*')
@@ -49,11 +59,16 @@ export function useMissionControl() {
             .from('security_logs')
             .select('*')
             .order('detected_at', { ascending: false })
-            .limit(15)
+            .limit(25),
+          client
+            .from('course_knowledge')
+            .select('course_code, course_name, official_price, max_scholarship_pct')
+            .order('course_code', { ascending: true })
         ]);
 
         if (!isMounted) return;
 
+        // 1. Process chats
         if (chatsRes.data && chatsRes.data.length > 0) {
           const loadedChats = chatsRes.data as ChatRecord[];
           setChats(loadedChats);
@@ -64,20 +79,57 @@ export function useMissionControl() {
           );
           setIsDemoMode(false);
         } else {
-          // Database has 0 rows yet; keep demo data visible so UI is immediately testable
+          // If the DB has 0 chats, offer demo fallback so the dashboard isn't blank
+          setChats(DEMO_CHATS);
+          setSelectedChatId(DEMO_CHATS[0]?.id ?? null);
+          setMessagesByChat(DEMO_MESSAGES);
+          setSecurityIncidents(DEMO_SECURITY_INCIDENTS);
           setIsDemoMode(true);
         }
 
+        // 2. Process security logs (normalize chat_id -> conversation_id)
         if (secRes.data && secRes.data.length > 0) {
-          setSecurityIncidents(secRes.data as SecurityIncident[]);
+          const normalized: SecurityIncident[] = secRes.data.map((row: any) => ({
+            id: String(row.id),
+            conversation_id: String(row.chat_id || row.conversation_id || ''),
+            attack_type: row.attack_type,
+            raw_input: row.raw_input,
+            severity: row.severity,
+            detected_at: row.detected_at
+          }));
+          setSecurityIncidents(normalized);
+        }
+
+        // 3. Process courses from course_knowledge
+        if (coursesRes.data && coursesRes.data.length > 0) {
+          const map = new Map<string, CourseReference>();
+          coursesRes.data.forEach((item: any) => {
+            if (!map.has(item.course_code)) {
+              map.set(item.course_code, {
+                code: item.course_code,
+                name: item.course_name,
+                modality: 'Virtual / Presencial CTT-FISEI',
+                officialPriceText: `$${item.official_price} USD · Beca máx ${item.max_scholarship_pct}%`
+              });
+            }
+          });
+          setLiveCatalog(Array.from(map.values()));
         }
       } catch (err) {
         console.warn('[useMissionControl] Fallback to demo data:', err);
+        setChats(DEMO_CHATS);
+        setSelectedChatId(DEMO_CHATS[0]?.id ?? null);
+        setMessagesByChat(DEMO_MESSAGES);
+        setSecurityIncidents(DEMO_SECURITY_INCIDENTS);
+        setIsDemoMode(true);
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
     }
 
     loadFromSupabase();
 
+    // Realtime channel for chats (INSERT / UPDATE)
     const chatsChannel = client
       .channel('realtime_chats_feed')
       .on(
@@ -107,16 +159,23 @@ export function useMissionControl() {
       )
       .subscribe();
 
+    // Realtime channel for security logs
     const secChannel = client
       .channel('realtime_security_feed')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'security_logs' },
         (payload) => {
-          setSecurityIncidents((prev) => [
-            payload.new as SecurityIncident,
-            ...prev
-          ]);
+          const incoming = payload.new as any;
+          const normalized: SecurityIncident = {
+            id: String(incoming.id),
+            conversation_id: String(incoming.chat_id || incoming.conversation_id || ''),
+            attack_type: incoming.attack_type,
+            raw_input: incoming.raw_input,
+            severity: incoming.severity,
+            detected_at: incoming.detected_at
+          };
+          setSecurityIncidents((prev) => [normalized, ...prev]);
         }
       )
       .subscribe();
@@ -128,7 +187,7 @@ export function useMissionControl() {
     };
   }, []);
 
-  // Load messages for selected chat when connected to real Supabase
+  // Load messages for selected chat when connected to Supabase
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase || !selectedChatId || isDemoMode) {
       return;
@@ -137,6 +196,7 @@ export function useMissionControl() {
     const client = supabase;
     let isMounted = true;
 
+    // Fetch historical messages for selected chat
     client
       .from('messages')
       .select('*')
@@ -151,6 +211,7 @@ export function useMissionControl() {
         }
       });
 
+    // Realtime subscription for incoming messages in this specific chat
     const msgChannel = client
       .channel(`chat_messages_${selectedChatId}`)
       .on(
@@ -193,7 +254,8 @@ export function useMissionControl() {
 
   const filteredChats = useMemo(() => {
     return chats.filter((c) => {
-      if (activeFilter === 'hot' && c.sentiment.toLowerCase() !== 'lead caliente') {
+      const status = mapSentimentToLeadStatus(c.sentiment);
+      if (activeFilter === 'hot' && status !== 'HOT_LEAD') {
         return false;
       }
       if (activeFilter === 'human' && !c.ai_paused) {
@@ -216,7 +278,7 @@ export function useMissionControl() {
   const stats = useMemo(() => {
     const total = chats.length;
     const hot = chats.filter(
-      (c) => c.sentiment.toLowerCase() === 'lead caliente'
+      (c) => mapSentimentToLeadStatus(c.sentiment) === 'HOT_LEAD'
     ).length;
     const human = chats.filter((c) => c.ai_paused).length;
     const alerts = chats.filter((c) => c.security_flag).length;
@@ -270,7 +332,9 @@ export function useMissionControl() {
                 ...c,
                 ai_paused: true,
                 sentiment:
-                  c.sentiment === 'frustrado' ? 'interesado' : c.sentiment,
+                  c.sentiment === 'frustrado' || c.sentiment === 'frustrated'
+                    ? 'interesado'
+                    : c.sentiment,
                 updated_at: nowIso
               }
             : c
@@ -313,17 +377,98 @@ export function useMissionControl() {
     [selectedChat, isSending, isDemoMode]
   );
 
-  const clearSecurityFlag = useCallback(() => {
+  const clearSecurityFlag = useCallback(async () => {
     if (!selectedChat) return;
     const targetId = selectedChat.id;
+    const nowIso = new Date().toISOString();
+
     setChats((prev) =>
       prev.map((c) =>
         c.id === targetId
-          ? { ...c, security_flag: false, security_reason: null }
+          ? { ...c, security_flag: false, security_reason: null, updated_at: nowIso }
           : c
       )
     );
-  }, [selectedChat]);
+
+    if (!isDemoMode && supabase) {
+      try {
+        await supabase
+          .from('chats')
+          .update({
+            security_flag: false,
+            security_reason: null,
+            updated_at: nowIso
+          })
+          .eq('id', targetId);
+      } catch (err) {
+        console.error('[useMissionControl] Error clearing security flag:', err);
+      }
+    }
+  }, [selectedChat, isDemoMode]);
+
+  const refreshLiveDatabase = useCallback(async () => {
+    if (!supabase) return;
+    setIsLoading(true);
+    try {
+      const [chatsRes, secRes, coursesRes] = await Promise.all([
+        supabase
+          .from('chats')
+          .select('*')
+          .order('updated_at', { ascending: false }),
+        supabase
+          .from('security_logs')
+          .select('*')
+          .order('detected_at', { ascending: false })
+          .limit(25),
+        supabase
+          .from('course_knowledge')
+          .select('course_code, course_name, official_price, max_scholarship_pct')
+          .order('course_code', { ascending: true })
+      ]);
+
+      if (chatsRes.data && chatsRes.data.length > 0) {
+        const loadedChats = chatsRes.data as ChatRecord[];
+        setChats(loadedChats);
+        setSelectedChatId((prev) =>
+          prev && loadedChats.some((c) => c.id === prev)
+            ? prev
+            : loadedChats[0].id
+        );
+        setIsDemoMode(false);
+      }
+
+      if (secRes.data) {
+        const normalized: SecurityIncident[] = secRes.data.map((row: any) => ({
+          id: String(row.id),
+          conversation_id: String(row.chat_id || row.conversation_id || ''),
+          attack_type: row.attack_type,
+          raw_input: row.raw_input,
+          severity: row.severity,
+          detected_at: row.detected_at
+        }));
+        setSecurityIncidents(normalized);
+      }
+
+      if (coursesRes.data && coursesRes.data.length > 0) {
+        const map = new Map<string, CourseReference>();
+        coursesRes.data.forEach((item: any) => {
+          if (!map.has(item.course_code)) {
+            map.set(item.course_code, {
+              code: item.course_code,
+              name: item.course_name,
+              modality: 'Virtual / Presencial CTT-FISEI',
+              officialPriceText: `$${item.official_price} USD · Beca máx ${item.max_scholarship_pct}%`
+            });
+          }
+        });
+        setLiveCatalog(Array.from(map.values()));
+      }
+    } catch (err) {
+      console.error('[useMissionControl] Error refreshing live data:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   const resetDemoData = useCallback(() => {
     setChats(DEMO_CHATS);
@@ -341,6 +486,8 @@ export function useMissionControl() {
     setSelectedChatId,
     messages,
     securityIncidents,
+    liveCatalog,
+    isLoading,
     isDemoMode,
     isSending,
     searchQuery,
@@ -351,6 +498,7 @@ export function useMissionControl() {
     toggleHandover,
     sendOperatorMessage,
     clearSecurityFlag,
+    refreshLiveDatabase,
     resetDemoData
   };
 }

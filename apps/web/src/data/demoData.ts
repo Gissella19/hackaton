@@ -31,45 +31,65 @@ export interface CourseReference {
   officialPriceText: string;
 }
 
-const COURSE_CATALOG: CourseReference[] = [
+export const COURSE_CATALOG: CourseReference[] = [
+  {
+    code: 'CTT-FISEI-01',
+    name: 'Fundamentos de Python 1 (Python Essentials 1)',
+    modality: 'Virtual autodidacta (Cisco NetAcad)',
+    officialPriceText: '$40 USD Oficial · Beca máx 15%'
+  },
+  {
+    code: 'CTT-FISEI-02',
+    name: 'Fundamentos de Python 2',
+    modality: 'Virtual autodidacta (Cisco NetAcad)',
+    officialPriceText: '$40 USD Oficial · Beca máx 15%'
+  },
+  {
+    code: 'CTT-FISEI-03',
+    name: 'JavaScript Essentials 1',
+    modality: 'Virtual autodidacta (Cisco NetAcad)',
+    officialPriceText: '$50 USD Oficial · Beca máx 15%'
+  },
+  {
+    code: 'CTT-FISEI-05',
+    name: 'Fundamentos de Ciencia y Analítica de Datos',
+    modality: 'Virtual autodidacta',
+    officialPriceText: '$50 USD Oficial · Beca máx 15%'
+  },
+  {
+    code: 'CTT-FISEI-06',
+    name: 'Ethical Hacker',
+    modality: 'Virtual síncrono (Zoom)',
+    officialPriceText: '$70 USD Oficial · Beca máx 15%'
+  },
   {
     code: 'CTT-FISEI-19',
     name: 'GitHub Certified: Agentic AI Developer (GH-600)',
     modality: 'Virtual síncrono (Zoom)',
-    officialPriceText: '$40 Estudiante UTA · $50 Graduado/Docente · $60 Público'
-  },
-  {
-    code: 'CTT-FISEI-20',
-    name: 'Preparación Arduino Certification Program',
-    modality: 'Presencial — Laboratorios Campus Huachi',
-    officialPriceText: '$40 Estudiante UTA · $50 Graduado/Docente · $60 Público'
-  },
-  {
-    code: 'CTT-FISEI-21',
-    name: 'Fundamentos de Python 2 – Certified Associate',
-    modality: 'Virtual autodidacta (Cisco NetAcad)',
-    officialPriceText: '$40 Estudiante UTA · $50 Graduado/Docente · $60 Público'
-  },
-  {
-    code: 'CTT-FISEI-05',
-    name: 'Ciencia y Analítica de Datos (SQL, Excel & Tableau)',
-    modality: 'Virtual autodidacta',
-    officialPriceText: '$30 Estudiante UTA · $40 Graduado/Docente · $50 Público'
+    officialPriceText: '$40 Estudiante UTA · $50 Graduado · $60 Público'
   }
 ];
 
-export function resolveCourseReference(activeCourse: string | null): CourseReference {
-  if (!activeCourse) return COURSE_CATALOG[0];
+export function resolveCourseReference(
+  activeCourse: string | null,
+  catalog?: CourseReference[]
+): CourseReference {
+  const effectiveCatalog =
+    catalog && catalog.length > 0 ? catalog : COURSE_CATALOG;
+  if (!activeCourse) return effectiveCatalog[0];
   const lower = activeCourse.toLowerCase();
-  const found = COURSE_CATALOG.find(
+  const found = effectiveCatalog.find(
     (c) =>
       lower.includes(c.code.toLowerCase()) ||
-      lower.includes('arduino') && c.code === 'CTT-FISEI-20' ||
-      lower.includes('python') && c.code === 'CTT-FISEI-21' ||
-      lower.includes('datos') && c.code === 'CTT-FISEI-05' ||
-      lower.includes('github') && c.code === 'CTT-FISEI-19'
+      lower.includes(c.name.toLowerCase()) ||
+      (lower.includes('python') && c.name.toLowerCase().includes('python')) ||
+      (lower.includes('javascript') &&
+        c.name.toLowerCase().includes('javascript')) ||
+      (lower.includes('datos') && c.name.toLowerCase().includes('datos')) ||
+      (lower.includes('hacker') && c.name.toLowerCase().includes('hacker')) ||
+      (lower.includes('linux') && c.name.toLowerCase().includes('linux'))
   );
-  return found || COURSE_CATALOG[0];
+  return found || effectiveCatalog[0];
 }
 
 const DEMO_ANCHOR_MS = Date.parse('2026-10-29T17:45:00.000Z');

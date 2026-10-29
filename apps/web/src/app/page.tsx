@@ -17,7 +17,8 @@ import {
   ArrowUpRight,
   RotateCcw,
   ShieldAlert,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 
 const SSR_REFERENCE_MS = Date.parse('2026-10-29T17:45:00.000Z');
@@ -54,6 +55,8 @@ export default function MissionControlDashboard() {
     setSelectedChatId,
     messages,
     securityIncidents,
+    liveCatalog,
+    isLoading,
     isDemoMode,
     isSending,
     searchQuery,
@@ -64,6 +67,7 @@ export default function MissionControlDashboard() {
     toggleHandover,
     sendOperatorMessage,
     clearSecurityFlag,
+    refreshLiveDatabase,
     resetDemoData
   } = useMissionControl();
 
@@ -135,7 +139,11 @@ export default function MissionControlDashboard() {
     await sendOperatorMessage(selectedChat.suggested_reply);
   };
 
-  const courseRef = resolveCourseReference(selectedChat?.active_course ?? null);
+  const courseRef = resolveCourseReference(
+    selectedChat?.active_course ?? null,
+    liveCatalog
+  );
+
   const chatIncidents = selectedChat
     ? securityIncidents.filter(
         (inc) =>
@@ -161,7 +169,9 @@ export default function MissionControlDashboard() {
                   : 'bg-emerald-400 animate-pulse'
               }`}
             />
-            <span>{isDemoMode ? 'Modo demostración' : 'Supabase en vivo'}</span>
+            <span>
+              {isDemoMode ? 'Modo demostración' : 'Supabase en vivo'}
+            </span>
           </div>
         </div>
 
@@ -191,7 +201,19 @@ export default function MissionControlDashboard() {
             <span className="font-mono font-semibold">{stats.alerts}</span>
           </div>
 
-          {isDemoMode ? (
+          {!isDemoMode ? (
+            <button
+              type="button"
+              onClick={refreshLiveDatabase}
+              title="Refrescar datos en vivo de Supabase"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#1E2638] bg-[#07090E] hover:bg-slate-800/60 px-2.5 py-1 text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              <RefreshCw
+                className={`h-3 w-3 ${isLoading ? 'animate-spin text-sky-400' : ''}`}
+              />
+              <span>Refrescar</span>
+            </button>
+          ) : (
             <button
               type="button"
               onClick={resetDemoData}
@@ -201,7 +223,7 @@ export default function MissionControlDashboard() {
               <RotateCcw className="h-3 w-3" />
               <span>Reiniciar demo</span>
             </button>
-          ) : null}
+          )}
         </div>
       </header>
 
@@ -243,9 +265,22 @@ export default function MissionControlDashboard() {
           </div>
 
           <div className="flex-1 overflow-y-auto divide-y divide-[#1E2638]/60">
-            {filteredChats.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-500">
-                No hay conversaciones que coincidan con este filtro.
+            {isLoading ? (
+              <div className="p-6 text-center text-xs text-slate-400 animate-pulse">
+                Sincronizando con Supabase...
+              </div>
+            ) : filteredChats.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-500 space-y-2">
+                <p>No hay conversaciones que coincidan con este filtro.</p>
+                {isDemoMode ? (
+                  <button
+                    type="button"
+                    onClick={resetDemoData}
+                    className="text-sky-400 hover:underline text-[11px]"
+                  >
+                    Cargar conversaciones de prueba
+                  </button>
+                ) : null}
               </div>
             ) : (
               filteredChats.map((chat) => {
@@ -514,7 +549,7 @@ export default function MissionControlDashboard() {
                   <div className="flex items-center justify-between text-slate-400">
                     <span>Arancel oficial</span>
                     <span className="font-mono text-slate-200">
-                      {courseRef.officialPriceText.split('·')[0].trim()}
+                      {courseRef.officialPriceText}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-slate-500">
