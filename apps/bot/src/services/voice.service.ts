@@ -2,9 +2,9 @@
  * VoiceService — "El traductor de notas de voz multimodal"
  *
  * Responsabilidad Única (SRP):
- * Descargar notas de voz desde los servidores de Telegram (.ogg) y transcribirlas
- * a texto en alta velocidad utilizando Gemini 3.8 Flash / Gemini Transcribe,
- * permitiendo que el flujo del bot procese audios como si fuesen texto normal.
+ * Descargar notas de voz y archivos de audio desde los servidores de Telegram (.ogg, .mp3, .wav, .m4a)
+ * y transcribirlas a texto en alta velocidad utilizando Gemini Multimodal,
+ * permitiendo que el flujo del bot procese audios con las mismas garantías de seguridad que el texto.
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -38,39 +38,91 @@ export class VoiceService {
   }
 
   /**
-   * Envía el buffer .ogg a Gemini para transcribirlo fielmente en español.
+   * Detecta el MIME type adecuado según la extensión del archivo de Telegram.
    */
-  public async transcribeVoiceBuffer(audioBuffer: Buffer): Promise<string> {
+  public detectAudioMime(filePath: string): string {
+    const lower = filePath.toLowerCase();
+    if (lower.endsWith('.mp3')) return 'audio/mp3';
+    if (lower.endsWith('.wav')) return 'audio/wav';
+    if (lower.endsWith('.m4a')) return 'audio/m4a';
+    if (lower.endsWith('.aac')) return 'audio/aac';
+    if (lower.endsWith('.flac')) return 'audio/flac';
+    return 'audio/ogg'; // Default para Telegram voice notes
+  }
+
+  /**
+   * Envía el buffer a Gemini para transcribirlo fielmente en español.
+   * Utiliza fallback multi-modelo con gemini-3.5-flash-lite y gemini-3.8-flash.
+   */
+  public async transcribeVoiceBuffer(
+    audioBuffer: Buffer,
+    mimeType: string = 'audio/ogg'
+  ): Promise<string> {
     if (!config.geminiApiKey) {
-      console.warn('[VoiceService] No hay GEMINI_API_KEY configurada. Fallback simulado.');
-      return '[Audio no transcrito: Falta GEMINI_API_KEY]';
+      console.warn('[VoiceService] No hay GEMINI_API_KEY configurada.');
+      throw new Error('Falta GEMINI_API_KEY');
     }
 
-    try {
-      const base64Data = audioBuffer.toString('base64');
-      const ai = this.getClient();
+    const base64Data = audioBuffer.toString('base64');
+    const ai = this.getClient();
 
-      const response = await ai.interactions.create({
-        model: 'gemini-3.8-flash',
-        input: [
-          {
-            type: 'text',
-            text: 'Eres un transcriptor de audio de alta fidelidad para prospectos de cursos universitarios en Ecuador. Transcribe este mensaje de voz palabra por palabra en español. No agregues explicaciones, comentarios ni formato adicional, solo devuelve la transcripción directa.'
-          },
-          {
-            type: 'media',
-            mime_type: 'audio/ogg',
-            data: base64Data
-          } as any
-        ]
-      });
+    const promptText =
+      'Eres un transcriptor de audio de alta fidelidad para el CTT-FISEI en Ecuador.\n' +
+      'Transcribe exactamente palabra por palabra lo que la persona dice en español en este audio.\n' +
+      'Devuelve ÚNICAMENTE el texto transcrito directo, sin comillas, sin explicaciones ni notas adicionales.';
 
-      const transcription = response.output_text?.trim() || '';
-      return transcription || '[Audio ininteligible o vacío]';
-    } catch (err) {
-      console.error('[VoiceService] Error transcribiendo audio con Gemini:', err);
-      return '[Error en transcripción de audio]';
+    const models = ['gemini-3.5-flash-lite', 'gemini-flash-latest', 'gemini-3.8-flash'];
+
+    // 1. Intentar con models.generateContent (estrategia multimodal nativa)
+    for (const model of models) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: [
+            { text: promptText },
+            {
+              inlineData: {
+                mimeType,
+                data: base64Data
+              }
+            }
+          ]
+        });
+
+        const text = response.text?.trim();
+        if (text) {
+          return text;
+        }
+      } catch (err: any) {
+        console.warn(`[VoiceService] Falló generateContent con ${model}:`, err?.message || err);
+      }
     }
+
+    // 2. Intentar con interactions.create ({ type: 'audio' })
+    for (const model of models) {
+      try {
+        const response = await ai.interactions.create({
+          model,
+          input: [
+            { type: 'text', text: promptText },
+            {
+              type: 'audio',
+              data: base64Data,
+              mime_type: mimeType
+            }
+          ]
+        });
+
+        const text = response.output_text?.trim();
+        if (text) {
+          return text;
+        }
+      } catch (err: any) {
+        console.warn(`[VoiceService] Falló interactions.create con ${model}:`, err?.message || err);
+      }
+    }
+
+    throw new Error('No se pudo transcribir el audio tras agotar todos los modelos.');
   }
 }
 

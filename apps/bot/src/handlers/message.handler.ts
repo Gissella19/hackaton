@@ -4,8 +4,8 @@
  * Responsabilidad Única (SRP):
  * Ejecutar la secuencia lógica cuando un mensaje (o ráfaga debounced) está listo:
  * 1. Check del semáforo a 0 ms (`stateCache.isAiPaused`).
- * 2. Persistencia del mensaje entrante en Supabase.
- * 3. Ejecución de guardrails heurísticos anti-inyección.
+ * 2. Persistencia del mensaje entrante en Supabase (soporta notas de voz).
+ * 3. Ejecución de guardrails heurísticos anti-inyección (mismo rigor para audio y texto).
  * 4. Carga de memoria conversacional y entidades del prospecto (`memoryService`).
  * 5. Inferencia contextualizada con Gemini y búsqueda vectorial RAG.
  * 6. Despacho de la respuesta oficial a Telegram.
@@ -28,8 +28,9 @@ export async function handleConsolidatedMessage(params: {
   chatId: number;
   text: string;
   isVoice?: boolean;
+  audioUrl?: string;
 }): Promise<void> {
-  const { bot, chatId, text } = params;
+  const { bot, chatId, text, isVoice, audioUrl } = params;
 
   // 1. SEMÁFORO EN RAM (0 ms reales): ¿La IA está pausada por el operador?
   if (stateCache.isAiPaused(chatId)) {
@@ -37,22 +38,27 @@ export async function handleConsolidatedMessage(params: {
     await saveMessage({
       chatId,
       sender: 'user',
-      content: text
+      content: text,
+      audioUrl
     });
     return; // Corte inmediato. Cero tokens y cero interrupciones al operador humano.
   }
 
-  // 2. Persistir mensaje del usuario en la base de datos
+  // 2. Persistir mensaje del usuario en la base de datos (con audioUrl si vino por voz)
   await saveMessage({
     chatId,
     sender: 'user',
-    content: text
+    content: text,
+    audioUrl
   });
 
-  // 3. ESCUDO ANTI-INYECCIÓN (Fase Heurística 0 ms)
-  const heuristic = inspectInputHeuristics(text);
+  // 3. ESCUDO ANTI-INYECCIÓN (Fase Heurística 0 ms aplicada a texto limpio)
+  const cleanInput = text.replace(/^\[Audio\]:\s*/i, '').trim();
+  const heuristic = inspectInputHeuristics(cleanInput);
   if (heuristic.isBlocked) {
-    console.warn(`[Seguridad] Bloqueo en chat #${chatId}: ${heuristic.reason}`);
+    console.warn(
+      `[Seguridad] Bloqueo en chat #${chatId} (${isVoice ? 'Audio' : 'Texto'}): ${heuristic.reason}`
+    );
 
     await logSecurityIncident({
       chatId,
@@ -90,7 +96,7 @@ export async function handleConsolidatedMessage(params: {
 
   // 6. Inferencia contextual con Gemini + RAG augmentado
   const decision = await processProspectMessage({
-    userInput: text,
+    userInput: cleanInput,
     context
   });
 
@@ -124,6 +130,6 @@ export async function handleConsolidatedMessage(params: {
     chatId,
     decision,
     context,
-    userInput: text
+    userInput: cleanInput
   });
 }

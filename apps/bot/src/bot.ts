@@ -2,7 +2,7 @@
  * Telegram Bot Configuration
  *
  * Responsabilidad Única (SRP):
- * Configuración de la instancia de grammY y registro de eventos de mensajería (texto y voz),
+ * Configuración de la instancia de grammY y registro de eventos de mensajería (texto y voz/audio),
  * delegando la acumulación a DebounceQueue y la ejecución a MessageHandler.
  */
 
@@ -63,8 +63,8 @@ export function createTelegramBot(): Bot {
     });
   });
 
-  // Manejo de Notas de Voz (Multimodal Audio con Gemini)
-  bot.on('message:voice', async (ctx) => {
+  // Manejo de Notas de Voz y Audios (Multimodal Audio con Gemini)
+  bot.on(['message:voice', 'message:audio'], async (ctx) => {
     const chatId = ctx.chat.id;
     const username = ctx.from?.username;
     const fullName = [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(' ') || 'Prospecto';
@@ -78,32 +78,36 @@ export function createTelegramBot(): Bot {
     try {
       await ctx.replyWithChatAction('typing');
 
-      // 1. Obtener la ruta del archivo de voz desde Telegram API
-      const voiceFile = await ctx.getFile();
-      if (!voiceFile.file_path) {
+      // 1. Obtener la ruta del archivo de audio desde Telegram API
+      const file = await ctx.getFile();
+      if (!file.file_path) {
         throw new Error('No se pudo obtener la ruta del archivo de audio de Telegram');
       }
 
-      // 2. Descargar el archivo .ogg en memoria
-      const audioBuffer = await voiceService.downloadTelegramVoice(voiceFile.file_path);
+      const audioUrl = `https://api.telegram.org/file/bot${config.telegramBotToken}/${file.file_path}`;
+      const mimeType = voiceService.detectAudioMime(file.file_path);
+
+      // 2. Descargar el archivo binario en memoria
+      const audioBuffer = await voiceService.downloadTelegramVoice(file.file_path);
 
       // 3. Transcribir a texto con Gemini Multimodal
-      const transcription = await voiceService.transcribeVoiceBuffer(audioBuffer);
+      const transcription = await voiceService.transcribeVoiceBuffer(audioBuffer, mimeType);
 
-      console.log(`[Audio Transcrito] Chat #${chatId}: "${transcription}"`);
+      console.log(`[Audio Transcrito] Chat #${chatId} (${mimeType}): "${transcription}"`);
 
-      // 4. Pasar la transcripción por la cola de debounce y el flujo unificado
-      debounceQueue.enqueue(chatId, `[Audio]: ${transcription}`, async (consolidatedText) => {
+      // 4. Pasar la transcripción por la cola de debounce con las mismas reglas de seguridad y persistencia
+      debounceQueue.enqueue(chatId, transcription, async (consolidatedText) => {
         await handleConsolidatedMessage({
           bot,
           chatId,
           text: consolidatedText,
-          isVoice: true
+          isVoice: true,
+          audioUrl
         });
       });
     } catch (err) {
-      console.error('[BotVoice] Error procesando nota de voz:', err);
-      await ctx.reply('⚠️ No pude procesar tu mensaje de voz en este momento. Por favor envíamelo en texto mientras lo reviso.');
+      console.error('[BotVoice] Error procesando audio:', err);
+      await ctx.reply('⚠️ No pude procesar con claridad tu mensaje de voz. Por favor envíamelo en texto mientras verifico el audio.');
     }
   });
 
