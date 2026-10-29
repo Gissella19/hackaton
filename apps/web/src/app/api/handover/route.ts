@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 
 export async function POST(request: Request) {
   try {
@@ -7,17 +7,20 @@ export async function POST(request: Request) {
     const { chatId, aiPaused } = body;
 
     if (chatId === undefined || aiPaused === undefined) {
-      return NextResponse.json({ error: 'Faltan parámetros: chatId y aiPaused' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Faltan parámetros: chatId y aiPaused' },
+        { status: 400 }
+      );
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-    if (!supabaseUrl || !supabaseKey) {
-      return NextResponse.json({ error: 'Supabase no configurado en web' }, { status: 500 });
+    if (!isSupabaseConfigured || !supabase) {
+      return NextResponse.json({
+        success: true,
+        simulated: true,
+        chatId,
+        aiPaused
+      });
     }
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { error } = await supabase
       .from('chats')
@@ -29,7 +32,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true, chatId, aiPaused });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error interno';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

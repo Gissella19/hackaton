@@ -8,10 +8,11 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:bot": "npm --workspace=@hackaton/bot run dev",
-    "dev:web": "npm --workspace=@hackaton/web run dev",
-    "build": "npm run build --workspaces",
-    "typecheck": "npm run typecheck --workspaces"
+    "dev": "npm --workspace=@hackaton/shared run build && npm --workspace=@hackaton/web run dev",
+    "dev:web": "npm --workspace=@hackaton/shared run build && npm --workspace=@hackaton/web run dev",
+    "dev:bot": "npm --workspace=@hackaton/shared run build && npm --workspace=@hackaton/bot run dev",
+    "build": "npm --workspace=@hackaton/shared run build && npm --workspace=@hackaton/bot run build && npm --workspace=@hackaton/web run build",
+    "typecheck": "npm --workspace=@hackaton/shared run build && npm run typecheck --workspaces"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
