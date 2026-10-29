@@ -1,0 +1,109 @@
+Preparación GitHub Certified: Agentic AI Developer (GH-600) | CTT-FISEI
+Dirección
+Av. Los Chasquis Y Río Payamino. Facultad de Ingeniería en Sistemas Electrónica e
+Industrial
+-->
+Verifica tu Certificado
+talleresfisei@uta.edu.ec
+Ingresa aquí
+Plataforma Educativa
+Ingresa aquí
+CTT
+FISEI
+Inicio
+Nosotros
+Cursos
+Contáctanos
+Cursos
+Inicio
+Cursos
+Preparación GitHub Certified: Agentic AI Developer (GH-600)
+DESCRIPCIÓN
+Capacitación inicial de agentes de inteligencia artificial aplicados al ciclo de vida del desarrollo de software. Abarca Git y GitHub, colaboración, GitHub Actions, GitHub Copilot, instrucciones para agentes, uso de herramientas y fundamentos de Model Context Protocol (MCP), evaluación, controles de seguridad y un proyecto integrador.
+OBJETIVOS
+Aplicar Git, GitHub, SDLC y automatización básica con GitHub Actions en trabajo colaborativo.
+Configurar agentes de codificación con GitHub Copilot, instrucciones personalizadas y fundamentos de MCP.
+Evaluar y supervisar agentes mediante criterios de éxito, guardrails y revisión humana; desarrollar un proyecto integrador.
+LUGAR DE CELEBRACIÓN
+Virtual por Zoom.
+Centro de Transferencia y Desarrollo de Tecnologías CTT-FISEI.
+COMITÉ ORGANIZADOR
+Ing. Javier Santiago Vargas Paredes, Mg.
+INSTRUCTORES
+Ing. Javier Santiago Vargas Paredes, Mg.
+REQUISITOS Y DETALLES
+MATERIALES Y EQUIPOS
+CONTENIDOS
+Fechas de inscripciones:
+Del 30 de octubre de 2026 al 13 de noviembre de 2026
+Cupo de inscripciones:
+Mínimo 5, máximo 25
+Lugar del evento:
+Virtual por Zoom.
+Fecha del curso:
+Del 14 de noviembre de 2026 al 05 de diciembre de 2026
+Horario:
+Sesiones virtuales el 14, 21 y 28 de noviembre y el 5 de diciembre de 2026, de 08:00 a 14:00; 24 horas de clase y 8 de trabajo autónomo.
+Precio para los asistentes:
+Estudiantes UTA (hasta último período): $40,00
+Graduados, docentes y personal administrativo UTA: $50,00
+Público en general: $60,00
+Tipo de capacitación:
+Certificado digital de asistencia y aprobación con validación QR.
+Horas de capacitación:
+32 horas
+Beneficiarios:
+Estudiantes, graduados, docentes y público en general
+Modalidad:
+Virtual
+Conocimientos previos:
+Conocimientos básicos de programación y manejo de computador. No se requiere experiencia previa con IA agéntica, MCP ni GitHub Copilot.
+El certificado de este curso de preparación no significa obtener automáticamente la certificación internacional externa.
+Computador personal con navegador actualizado
+Conexión a Internet
+Clase 1:
+Fundamentos de GitHub, SDLC e IA Agéntica
+Git y GitHub: repositorios, commits, ramas, pull requests y revisión de código.
+Introducción al SDLC, CI/CD y GitHub Actions.
+Fundamentos de IA generativa y agentes de codificación.
+Introducción a GitHub Copilot y prompting para desarrollo.
+Ciclo del agente: planificar, actuar y evaluar.
+GitHub como sistema de registro y plano de control.
+Trabajo autónomo: práctica de repositorio, ramas y pull request.
+Clase 2:
+Arquitectura del Agente e Integración con el SDLC
+Definición de tareas, entradas, salidas y criterios de éxito.
+Separación entre planificación, razonamiento y ejecución.
+Instrucciones personalizadas y agentes personalizados.
+Alcance por repositorio, rama y flujo de trabajo.
+Revisión, CODEOWNERS, reglas, protección de ramas y observabilidad.
+Trabajo autónomo: diseño de un flujo agéntico controlado.
+Clase 3:
+Herramientas, MCP, Memoria, Estado y Ejecución
+Uso de herramientas, APIs y permisos del agente.
+Fundamentos de Model Context Protocol (MCP), servidores, registros y listas permitidas.
+Contexto y límites de ejecución en GitHub.
+Estrategias básicas de memoria, estado y prevención de deriva de contexto.
+Manejo de errores, reintentos, reversión, escalamiento y trazabilidad.
+Trabajo autónomo: laboratorio guiado de herramientas y MCP.
+Clase 4:
+Evaluación, Multiagente, Guardrails y Proyecto Integrador
+Criterios de éxito, señales de evaluación y análisis de errores.
+Ajuste de instrucciones, herramientas, contexto y permisos.
+Coordinación multiagente, aislamiento, conflictos y recuperación.
+Guardrails, mínimo privilegio, aprobación humana y auditoría.
+Proyecto: agente que propone cambios mediante rama y pull request controlado.
+Mapeo introductorio a los seis dominios del examen GH-600.
+REGISTRARME EN ESTE CURSO
+Contacto
+Av. Los Chasquis y Rio Guayllabamba
+talleresfisei@uta.edu.ec
+ctt.fisei@uta.edu.ec
+Plataforma Educativa
+Información
+Cuentános tus inquietudes.
+SOLICITAR INFORMACIÓN - CTT
+&copy;
+Copyright © Universidad Técnica de Ambato
+Autores
+FAQs
