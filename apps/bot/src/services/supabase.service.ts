@@ -1,99 +1,98 @@
+/**
+ * SupabaseService — "Capa de persistencia desacoplada"
+ *
+ * Responsabilidad Única (SRP):
+ * Operaciones CRUD contra las tablas oficiales de Supabase (`chats`, `messages`, `security_logs`)
+ * garantizando persistencia bidireccional y actualización de estados del prospecto.
+ */
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { ControlMode, Conversation, LeadStatus, MessageSender } from '@hackaton/shared';
 import { config } from '../config.js';
 
-// Cache local en memoria para Check de Estado a 0 ms
-const modeCache = new Map<number, ControlMode>();
-
-let supabase: SupabaseClient | null = null;
+let supabaseClient: SupabaseClient | null = null;
 
 export function getSupabase(): SupabaseClient | null {
-  if (!supabase && config.supabaseUrl && config.supabaseKey) {
-    supabase = createClient(config.supabaseUrl, config.supabaseKey);
+  if (!supabaseClient && config.supabaseUrl && config.supabaseKey) {
+    supabaseClient = createClient(config.supabaseUrl, config.supabaseKey);
   }
-  return supabase;
+  return supabaseClient;
 }
 
-export async function getChatControlMode(telegramChatId: number): Promise<ControlMode> {
-  if (modeCache.has(telegramChatId)) {
-    return modeCache.get(telegramChatId)!;
-  }
-
-  const client = getSupabase();
-  if (!client) return 'AI';
-
-  const { data, error } = await client
-    .from('conversations')
-    .select('control_mode')
-    .eq('telegram_chat_id', telegramChatId)
-    .single();
-
-  if (error || !data) {
-    return 'AI';
-  }
-
-  const mode = data.control_mode as ControlMode;
-  modeCache.set(telegramChatId, mode);
-  return mode;
+export interface ChatRecord {
+  id: number;
+  username: string | null;
+  full_name: string;
+  sentiment: string;
+  ai_paused: boolean;
+  summary: string | null;
+  security_flag: boolean;
+  security_reason: string | null;
+  suggested_reply: string | null;
+  active_course: string | null;
+  tokens_saved: number;
+  updated_at: string;
 }
 
-export function setMemoryControlMode(telegramChatId: number, mode: ControlMode) {
-  modeCache.set(telegramChatId, mode);
-}
-
-export async function getOrCreateConversation(
-  telegramChatId: number,
-  prospectName: string
-): Promise<Conversation | null> {
+/**
+ * Obtiene o inicializa la sesión de un prospecto en la tabla `chats`.
+ */
+export async function getOrCreateChat(params: {
+  chatId: number;
+  username?: string;
+  fullName: string;
+}): Promise<ChatRecord | null> {
   const client = getSupabase();
   if (!client) return null;
 
-  const { data: existing } = await client
-    .from('conversations')
+  const { data: existing, error: selectError } = await client
+    .from('chats')
     .select('*')
-    .eq('telegram_chat_id', telegramChatId)
+    .eq('id', params.chatId)
     .single();
 
   if (existing) {
-    modeCache.set(telegramChatId, existing.control_mode);
-    return existing as Conversation;
+    return existing as ChatRecord;
   }
 
-  const { data: created, error } = await client
-    .from('conversations')
+  const { data: created, error: insertError } = await client
+    .from('chats')
     .insert({
-      telegram_chat_id: telegramChatId,
-      prospect_name: prospectName,
-      control_mode: 'AI',
-      lead_status: 'INTERESTED',
-      sentiment_score: 50
+      id: params.chatId,
+      username: params.username || null,
+      full_name: params.fullName,
+      sentiment: 'interesado',
+      ai_paused: false,
+      summary: 'Conversación iniciada por el prospecto.',
+      security_flag: false
     })
     .select()
     .single();
 
-  if (error) {
-    console.error('[SupabaseService] Error creando conversación:', error);
+  if (insertError) {
+    console.error('[SupabaseService] Error creando registro de chat:', insertError);
     return null;
   }
 
-  modeCache.set(telegramChatId, 'AI');
-  return created as Conversation;
+  return created as ChatRecord;
 }
 
+/**
+ * Persiste un mensaje en la tabla `messages`.
+ */
 export async function saveMessage(params: {
-  conversationId: string;
-  senderType: MessageSender;
+  chatId: number;
+  sender: 'user' | 'ai' | 'operator';
   content: string;
-  isVoice?: boolean;
+  audioUrl?: string;
 }) {
   const client = getSupabase();
   if (!client) return;
 
   const { error } = await client.from('messages').insert({
-    conversation_id: params.conversationId,
-    sender_type: params.senderType,
+    chat_id: params.chatId,
+    sender: params.sender,
     content: params.content,
-    is_voice_transcribed: !!params.isVoice
+    audio_url: params.audioUrl || null
   });
 
   if (error) {
@@ -101,53 +100,61 @@ export async function saveMessage(params: {
   }
 }
 
-export async function updateConversationState(params: {
-  conversationId: string;
-  telegramChatId: number;
-  controlMode?: ControlMode;
-  leadStatus?: LeadStatus;
-  sentimentScore?: number;
-  securityAlert?: string | null;
-  leadMemory?: Record<string, unknown>;
+/**
+ * Actualiza el estado y copiloto de un chat.
+ */
+export async function updateChatMetadata(params: {
+  chatId: number;
+  aiPaused?: boolean;
+  sentiment?: string;
+  summary?: string;
+  securityFlag?: boolean;
+  securityReason?: string;
+  suggestedReply?: string;
+  activeCourse?: string;
 }) {
   const client = getSupabase();
-  if (params.controlMode) {
-    modeCache.set(params.telegramChatId, params.controlMode);
-  }
-
   if (!client) return;
 
-  const payload: Record<string, unknown> = {};
-  if (params.controlMode !== undefined) payload.control_mode = params.controlMode;
-  if (params.leadStatus !== undefined) payload.lead_status = params.leadStatus;
-  if (params.sentimentScore !== undefined) payload.sentiment_score = params.sentimentScore;
-  if (params.securityAlert !== undefined) payload.security_alert = params.securityAlert;
-  if (params.leadMemory !== undefined) payload.lead_memory = params.leadMemory;
+  const payload: Record<string, unknown> = {
+    updated_at: new Date().toISOString()
+  };
+
+  if (params.aiPaused !== undefined) payload.ai_paused = params.aiPaused;
+  if (params.sentiment !== undefined) payload.sentiment = params.sentiment;
+  if (params.summary !== undefined) payload.summary = params.summary;
+  if (params.securityFlag !== undefined) payload.security_flag = params.securityFlag;
+  if (params.securityReason !== undefined) payload.security_reason = params.securityReason;
+  if (params.suggestedReply !== undefined) payload.suggested_reply = params.suggestedReply;
+  if (params.activeCourse !== undefined) payload.active_course = params.activeCourse;
 
   const { error } = await client
-    .from('conversations')
+    .from('chats')
     .update(payload)
-    .eq('id', params.conversationId);
+    .eq('id', params.chatId);
 
   if (error) {
-    console.error('[SupabaseService] Error actualizando estado de conversación:', error);
+    console.error('[SupabaseService] Error actualizando metadatos del chat:', error);
   }
 }
 
-export async function recordSecurityIncident(params: {
-  conversationId: string | null;
+/**
+ * Registra un intento de prompt injection en `security_logs`.
+ */
+export async function logSecurityIncident(params: {
+  chatId: number;
   attackType: string;
   rawInput: string;
-  severity: 'LOW' | 'MEDIUM' | 'HIGH';
+  severity?: 'LOW' | 'MEDIUM' | 'HIGH';
 }) {
   const client = getSupabase();
   if (!client) return;
 
   const { error } = await client.from('security_logs').insert({
-    conversation_id: params.conversationId,
+    chat_id: params.chatId,
     attack_type: params.attackType,
     raw_input: params.rawInput,
-    severity: params.severity
+    severity: params.severity || 'HIGH'
   });
 
   if (error) {

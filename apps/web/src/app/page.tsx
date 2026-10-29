@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Conversation, Message, SecurityIncident } from '@hackaton/shared';
 import { supabase } from '@/lib/supabaseClient';
 import { LeadThermometer } from '@/components/LeadThermometer';
 import { SecurityRadar } from '@/components/SecurityRadar';
@@ -18,11 +17,34 @@ import {
   PlayCircle
 } from 'lucide-react';
 
+interface Chat {
+  id: number;
+  username: string | null;
+  full_name: string;
+  sentiment: string;
+  ai_paused: boolean;
+  summary: string | null;
+  security_flag: boolean;
+  security_reason: string | null;
+  suggested_reply: string | null;
+  active_course: string | null;
+  updated_at: string;
+}
+
+interface Message {
+  id: string;
+  chat_id: number;
+  sender: 'user' | 'ai' | 'operator';
+  content: string;
+  audio_url?: string | null;
+  created_at: string;
+}
+
 export default function MissionControlDashboard() {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedChat, setSelectedChat] = useState<Conversation | null>(null);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [securityIncidents, setSecurityIncidents] = useState<SecurityIncident[]>([]);
+  const [securityIncidents, setSecurityIncidents] = useState<any[]>([]);
   const [operatorInput, setOperatorInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -31,16 +53,16 @@ export default function MissionControlDashboard() {
   useEffect(() => {
     if (!supabase) return;
 
-    // 1. Cargar conversaciones
+    // 1. Cargar chats
     supabase
-      .from('conversations')
+      .from('chats')
       .select('*')
       .order('updated_at', { ascending: false })
       .then(({ data }) => {
         if (data) {
-          setConversations(data as Conversation[]);
+          setChats(data as Chat[]);
           if (data.length > 0 && !selectedChat) {
-            setSelectedChat(data[0] as Conversation);
+            setSelectedChat(data[0] as Chat);
           }
         }
       });
@@ -52,56 +74,56 @@ export default function MissionControlDashboard() {
       .order('detected_at', { ascending: false })
       .limit(10)
       .then(({ data }) => {
-        if (data) setSecurityIncidents(data as SecurityIncident[]);
+        if (data) setSecurityIncidents(data);
       });
 
-    // 3. Suscripción a cambios en conversaciones (Realtime)
-    const convChannel = supabase
-      .channel('realtime_conversations')
+    // 3. Suscripción a cambios en chats (Realtime)
+    const chatsChannel = supabase
+      .channel('realtime_chats_feed')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'conversations' },
-        (payload) => {
+        { event: '*', schema: 'public', table: 'chats' },
+        (payload: any) => {
           if (payload.eventType === 'INSERT') {
-            setConversations((prev) => [payload.new as Conversation, ...prev]);
+            setChats((prev) => [payload.new as Chat, ...prev]);
           } else if (payload.eventType === 'UPDATE') {
-            setConversations((prev) =>
-              prev.map((c) => (c.id === payload.new.id ? (payload.new as Conversation) : c))
+            setChats((prev) =>
+              prev.map((c) => (c.id === payload.new.id ? (payload.new as Chat) : c))
             );
             if (selectedChat?.id === payload.new.id) {
-              setSelectedChat(payload.new as Conversation);
+              setSelectedChat(payload.new as Chat);
             }
           }
         }
       )
       .subscribe();
 
-    // 4. Suscripción a incidentes de seguridad (Realtime)
+    // 4. Suscripción a incidentes de seguridad
     const secChannel = supabase
-      .channel('realtime_security')
+      .channel('realtime_security_feed')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'security_logs' },
-        (payload) => {
-          setSecurityIncidents((prev) => [payload.new as SecurityIncident, ...prev]);
+        (payload: any) => {
+          setSecurityIncidents((prev) => [payload.new, ...prev]);
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(convChannel);
+      supabase.removeChannel(chatsChannel);
       supabase.removeChannel(secChannel);
     };
-  }, [selectedChat]);
+  }, [selectedChat?.id]);
 
-  // Cargar mensajes cuando cambia el chat seleccionado
+  // Cargar mensajes cuando cambia el chat activo
   useEffect(() => {
     if (!supabase || !selectedChat) return;
 
     supabase
       .from('messages')
       .select('*')
-      .eq('conversation_id', selectedChat.id)
+      .eq('chat_id', selectedChat.id)
       .order('created_at', { ascending: true })
       .then(({ data }) => {
         if (data) setMessages(data as Message[]);
@@ -109,16 +131,16 @@ export default function MissionControlDashboard() {
 
     // Suscripción a nuevos mensajes en el chat activo
     const msgChannel = supabase
-      .channel(`chat_${selectedChat.id}`)
+      .channel(`chat_messages_${selectedChat.id}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `conversation_id=eq.${selectedChat.id}`
+          filter: `chat_id=eq.${selectedChat.id}`
         },
-        (payload) => {
+        (payload: any) => {
           setMessages((prev) => [...prev, payload.new as Message]);
         }
       )
@@ -136,19 +158,19 @@ export default function MissionControlDashboard() {
   // Alternar Handover (Pausar IA / Reanudar IA)
   const toggleHandover = async () => {
     if (!selectedChat) return;
-    const nextMode = selectedChat.control_mode === 'AI' ? 'HUMAN' : 'AI';
+    const nextPaused = !selectedChat.ai_paused;
 
     try {
       await fetch('/api/handover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          conversationId: selectedChat.id,
-          controlMode: nextMode
+          chatId: selectedChat.id,
+          aiPaused: nextPaused
         })
       });
 
-      setSelectedChat({ ...selectedChat, control_mode: nextMode });
+      setSelectedChat({ ...selectedChat, ai_paused: nextPaused });
     } catch (err) {
       console.error('Error toggling handover:', err);
     }
@@ -168,8 +190,7 @@ export default function MissionControlDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          conversationId: selectedChat.id,
-          telegramChatId: selectedChat.telegram_chat_id,
+          chatId: selectedChat.id,
           content
         })
       });
@@ -182,7 +203,7 @@ export default function MissionControlDashboard() {
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100">
-      {/* HEADER TOP BAR */}
+      {/* HEADER */}
       <header className="h-16 border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
@@ -192,7 +213,7 @@ export default function MissionControlDashboard() {
             <h1 className="font-bold text-base text-slate-100 flex items-center gap-2">
               FISEI UTA 2026 <span className="text-xs px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">MISSION CONTROL</span>
             </h1>
-            <p className="text-xs text-slate-400">Ecosistema Multi-Agente & Seamless Handover</p>
+            <p className="text-xs text-slate-400">Ecosistema Multi-Agente & Seamless Handover (Persona 2)</p>
           </div>
         </div>
 
@@ -204,31 +225,39 @@ export default function MissionControlDashboard() {
           </div>
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-blue-400" />
-            <span className="text-slate-400">Total Hilos:</span>
-            <span className="text-slate-200 font-mono font-bold">{conversations.length}</span>
+            <span className="text-slate-400">Chats Activos:</span>
+            <span className="text-slate-200 font-mono font-bold">{chats.length}</span>
           </div>
         </div>
       </header>
 
-      {/* MAIN 3-COLUMN WORKSPACE */}
+      {/* WORKSPACE */}
       <div className="flex-1 grid grid-cols-12 overflow-hidden">
-        {/* COLUMNA 1: LISTA DE PROSPECTOS CONCURRENTES (3 COLS) */}
+        {/* LISTA DE CHATS */}
         <aside className="col-span-3 border-r border-slate-800 bg-slate-900/30 flex flex-col">
           <div className="p-3.5 border-b border-slate-800 font-semibold text-xs text-slate-400 uppercase tracking-wider flex items-center justify-between">
-            <span>Interacciones en Vivo</span>
+            <span>Interacciones Telegram</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
-              {conversations.length}
+              {chats.length}
             </span>
           </div>
 
           <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
-            {conversations.length === 0 ? (
+            {chats.length === 0 ? (
               <div className="p-6 text-center text-xs text-slate-500">
                 Esperando interacciones de Telegram... Inicia una conversación enviando /start al bot.
               </div>
             ) : (
-              conversations.map((c) => {
+              chats.map((c) => {
                 const isSelected = selectedChat?.id === c.id;
+                const statusMap: Record<string, any> = {
+                  'lead caliente': 'HOT_LEAD',
+                  'interesado': 'INTERESTED',
+                  'dudoso': 'DOUBTFUL',
+                  'frustrado': 'FRUSTRATED'
+                };
+                const mappedStatus = statusMap[c.sentiment.toLowerCase()] || 'INTERESTED';
+
                 return (
                   <button
                     key={c.id}
@@ -239,23 +268,23 @@ export default function MissionControlDashboard() {
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-sm text-slate-200 truncate">
-                        {c.prospect_name}
+                        {c.full_name || 'Prospecto'}
                       </span>
                       <span className="text-[10px] font-mono text-slate-400">
-                        #{c.telegram_chat_id}
+                        #{c.id}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between gap-1">
-                      <LeadThermometer status={c.lead_status} score={c.sentiment_score} />
+                      <LeadThermometer status={mappedStatus} score={c.ai_paused ? 100 : 70} />
                       <span
                         className={`text-[10px] px-2 py-0.5 rounded font-mono font-semibold ${
-                          c.control_mode === 'AI'
+                          !c.ai_paused
                             ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
                             : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
                         }`}
                       >
-                        {c.control_mode === 'AI' ? '🤖 IA ACTIVA' : '👤 HUMANO'}
+                        {!c.ai_paused ? '🤖 IA ACTIVA' : '👤 HUMANO'}
                       </span>
                     </div>
                   </button>
@@ -265,34 +294,32 @@ export default function MissionControlDashboard() {
           </div>
         </aside>
 
-        {/* COLUMNA 2: CHAT DETAIL & INTERVENCIÓN HUMANA (6 COLS) */}
+        {/* CHAT VIEW & OPERATOR INPUT */}
         <main className="col-span-6 flex flex-col bg-slate-950">
           {selectedChat ? (
             <>
-              {/* CHAT HEADER & HANDOVER CONTROLS */}
               <div className="p-4 border-b border-slate-800 bg-slate-900/40 flex items-center justify-between">
                 <div>
                   <h2 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-                    {selectedChat.prospect_name}
+                    {selectedChat.full_name}
                     <span className="text-xs font-normal text-slate-400">
-                      (ID Telegram: {selectedChat.telegram_chat_id})
+                      (Chat ID: {selectedChat.id})
                     </span>
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Modo actual: <strong className="text-indigo-400">{selectedChat.control_mode}</strong>
+                    Control: <strong className="text-indigo-400">{selectedChat.ai_paused ? 'HUMANO (IA Pausada)' : 'IA ACTIVA'}</strong>
                   </p>
                 </div>
 
-                {/* BOTÓN SEAMLESS HANDOVER */}
                 <button
                   onClick={toggleHandover}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-md ${
-                    selectedChat.control_mode === 'AI'
+                    !selectedChat.ai_paused
                       ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-900/40'
                       : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/40'
                   }`}
                 >
-                  {selectedChat.control_mode === 'AI' ? (
+                  {!selectedChat.ai_paused ? (
                     <>
                       <PauseCircle className="w-4 h-4" />
                       Intervenir (Congelar IA)
@@ -306,7 +333,7 @@ export default function MissionControlDashboard() {
                 </button>
               </div>
 
-              {/* MESSAGE STREAM */}
+              {/* MESSAGES */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 {messages.length === 0 ? (
                   <p className="text-center text-xs text-slate-500 py-8">
@@ -314,8 +341,8 @@ export default function MissionControlDashboard() {
                   </p>
                 ) : (
                   messages.map((m) => {
-                    const isUser = m.sender_type === 'USER';
-                    const isOp = m.sender_type === 'OPERATOR';
+                    const isUser = m.sender === 'user';
+                    const isOp = m.sender === 'operator';
 
                     return (
                       <div
@@ -336,9 +363,6 @@ export default function MissionControlDashboard() {
                             {!isUser && !isOp && <Bot className="w-3 h-3" />}
                             {isOp && <UserCheck className="w-3 h-3" />}
                             <span>{isUser ? 'Prospecto' : isOp ? 'Operador (Vos)' : 'Agente IA'}</span>
-                            {m.is_voice_transcribed && (
-                              <span className="bg-black/30 px-1 rounded text-[9px]">Transcriptor</span>
-                            )}
                           </div>
                           <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
                         </div>
@@ -352,12 +376,12 @@ export default function MissionControlDashboard() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* OPERATOR INPUT BOX */}
+              {/* INPUT */}
               <form onSubmit={handleSendOperatorMessage} className="p-3 border-t border-slate-800 bg-slate-900/60 flex gap-2">
                 <input
                   type="text"
                   placeholder={
-                    selectedChat.control_mode === 'HUMAN'
+                    selectedChat.ai_paused
                       ? 'Escribe tu respuesta como operador humano...'
                       : 'La IA está respondiendo en automático (Haz clic en Intervenir para tomar control)...'
                   }
@@ -383,9 +407,9 @@ export default function MissionControlDashboard() {
           )}
         </main>
 
-        {/* COLUMNA 3: COPILOTO DE HANDOVER & RADAR DE SEGURIDAD (3 COLS) */}
+        {/* COPILOTO & RADAR */}
         <aside className="col-span-3 border-l border-slate-800 bg-slate-900/30 p-4 space-y-4 overflow-y-auto">
-          {/* COPILOTO DE HANDOVER (WHISPER SUMMARY) */}
+          {/* COPILOTO WHISPER */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-lg backdrop-blur">
             <div className="flex items-center gap-2 pb-3 border-b border-slate-800 text-indigo-400">
               <Sparkles className="w-4 h-4" />
@@ -394,25 +418,25 @@ export default function MissionControlDashboard() {
               </h3>
             </div>
 
-            {selectedChat?.lead_memory ? (
+            {selectedChat ? (
               <div className="mt-3 space-y-2.5 text-xs">
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Interés:</span>
-                  <p className="font-medium text-slate-200">{selectedChat.lead_memory.interest || 'General'}</p>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Resumen del Hilo:</span>
+                  <p className="font-medium text-slate-200 mt-0.5">{selectedChat.summary || 'En curso...'}</p>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Principal Objeción:</span>
-                  <p className="font-medium text-amber-400">{selectedChat.lead_memory.main_objection || 'Ninguna registrada'}</p>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Curso de Interés:</span>
+                  <p className="font-medium text-emerald-400 mt-0.5">{selectedChat.active_course || 'Por definir'}</p>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Acción Recomendada:</span>
-                  <p className="p-2 rounded bg-indigo-950/40 border border-indigo-900/60 text-indigo-300 text-[11px] font-medium leading-relaxed">
-                    {selectedChat.lead_memory.suggested_human_action || 'Cerrar matriculación con plan de pago oficial.'}
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Respuesta Sugerida:</span>
+                  <p className="p-2 rounded bg-indigo-950/40 border border-indigo-900/60 text-indigo-300 text-[11px] font-medium leading-relaxed mt-0.5">
+                    {selectedChat.suggested_reply || 'Cerrar matriculación con plan de pago oficial.'}
                   </p>
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-slate-500 italic mt-3">Sin memoria de prospecto aún.</p>
+              <p className="text-xs text-slate-500 italic mt-3">Sin datos de chat seleccionado.</p>
             )}
           </div>
 

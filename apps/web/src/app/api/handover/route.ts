@@ -4,10 +4,10 @@ import { createClient } from '@supabase/supabase-js';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { conversationId, controlMode } = body;
+    const { chatId, aiPaused } = body;
 
-    if (!conversationId || !controlMode) {
-      return NextResponse.json({ error: 'Faltan parámetros requeridos' }, { status: 400 });
+    if (chatId === undefined || aiPaused === undefined) {
+      return NextResponse.json({ error: 'Faltan parámetros: chatId y aiPaused' }, { status: 400 });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -20,15 +20,15 @@ export async function POST(request: Request) {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { error } = await supabase
-      .from('conversations')
-      .update({ control_mode: controlMode })
-      .eq('id', conversationId);
+      .from('chats')
+      .update({ ai_paused: aiPaused, updated_at: new Date().toISOString() })
+      .eq('id', chatId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, controlMode });
+    return NextResponse.json({ success: true, chatId, aiPaused });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
